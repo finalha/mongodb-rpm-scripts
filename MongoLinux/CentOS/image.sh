@@ -135,6 +135,15 @@ if [[ $(crontab -l) ]];
   else
      echo "*/1 * * * * /bin/bash -c 'if ! /usr/sbin/service $dbservicename status|grep -q \"(running)\"; then /usr/sbin/service $dbservicename start; fi' >/dev/null 2>&1" | crontab;
 fi
+#Start the service of mongodb
+service $dbservicename start > /dev/null 2>&1
+if [ $? == 0 ];then
+echo "succeed to execute image.sh"
+else
+echo "failed to start service of mongodb:$dbservicename"
+looptag=false
+break
+fi
 . mongodbconfig.sh
 /sbin/chkconfig $dbservicename on
 looptag=false

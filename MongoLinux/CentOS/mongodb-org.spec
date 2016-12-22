@@ -18,6 +18,7 @@
 %global memorylimit 90%
 %global singlenode yes
 %global requiressl no
+%global image no
  
 Name: mongodbconfig
 Prefix: /usr
@@ -99,6 +100,7 @@ for keyname in "${!array[@]}";do
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
 			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
+			"Image") image=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
@@ -160,6 +162,10 @@ if [ -z "$singlenode" ] ; then
 	singlenode=%{singlenode}
 fi
 
+if [ -z "$image" ] ; then
+	image=%{image}
+fi
+
 echo "DBServiceName value is :$dbservicename"
 echo "DBSystemUser value is :$dbsystemuser"
 echo "DBSystemGroup value is :$dbsystemgroup"
@@ -178,6 +184,7 @@ echo "KeyPath value is :$keypath"
 echo "SingleNode value is :$singlenode"
 echo "ReplicaSetMembers value is :$replicasetmembers"
 echo "ReplicaSetKeyFile value is :$replicasetkeyfile"
+echo "Image value is :$image"
 
 mkdir -p $RPM_BUILD_ROOT/$dbpath
 cp -rv %{_builddir}/%{buildsubdir}/$dbpath/* $RPM_BUILD_ROOT/$dbpath
@@ -272,6 +279,7 @@ for keyname in "${!array[@]}";do
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
 			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
+			"Image") image=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
@@ -331,6 +339,10 @@ fi
 
 if [ -z "$singlenode" ] ; then
 	singlenode=%{singlenode}
+fi
+
+if [ -z "$image" ] ; then
+	image=%{image}
 fi
 
 #if [ -z "$replicasetmembers" ] ; then
@@ -426,6 +438,7 @@ for keyname in "${!array[@]}";do
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
 			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
+			"Image") image=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
@@ -485,6 +498,10 @@ fi
 
 if [ -z "$singlenode" ] ; then
 	singlenode=%{singlenode}
+fi
+
+if [ -z "$image" ] ; then
+	image=%{image}
 fi
 
 #if [ -z "$replicasetmembers" ] ; then
@@ -688,9 +705,12 @@ fi
   systemctl set-property $dbservicename MemoryLimit=$cgroupMemoryInGB"G"
   #chkconfig cgconfig on
   #get port from parameters input, firewall should allow access to $dbport of this Linux machine
-  firewall-cmd --zone=public --add-port=$dbport/tcp --permanent
-  firewall-cmd --reload
-  iptables-save | grep $dbport
+  service firewalld status|grep "running" > /dev/null 2>&1
+  if [ $? == 0 ];then
+  firewall-cmd --zone=public --add-port=$dbport/tcp --permanent > /dev/null 2>&1
+  firewall-cmd --reload > /dev/null 2>&1
+  iptables-save | grep $dbport > /dev/null 2>&1
+  fi
   #if ssl equal to yes,merge cert.pem+key.pem to mongodb.pem,and replace the old mongodb.pem
   if [ "$requiressl" == "yes" ]; then
   cat "$keypath" "$certpath" > "$rootpath/mongodb.pem"
@@ -711,6 +731,13 @@ fi
   sed -i "s@#keyFile: /mnt/mongod1/mongodb-keyfile@keyFile: $rootpath/mongodb-keyfile@g" $rootpath/mongod.conf
   fi
   fi
+  #image special config
+  if [ "$image" == "yes" ]; then
+  sed -i "s/$bindip,127.0.0.1/127.0.0.1/g" $rootpath/mongod.conf
+  echo "Mongodb has been installed successfully"
+  #restart system 1 minutes later to make kernel settings work(only root user can run the command)
+  shutdown -r 1
+  else
   systemctl start $dbservicename > /dev/null 2>&1
   if [ $? == 0 ];then
   #must sleep some seconds
@@ -722,44 +749,6 @@ fi
   fi  
   if [ $? == 0 ];then
   echo "succeed to connect mongodb node:$bindip:$dbport"
-#  if [ "$singlenode" == "no" ]; then
-#	if [ -f "/etc/initreplica.js" ]; then  
-#	rm -rf /etc/initreplica.js
-#	fi 
-#
-#	echo "var cfg = { _id: '$replicasetname'," >> "/etc/initreplica.js"
-#	echo "members: [" >> "/etc/initreplica.js"
-#	i=0
-#	for   rsmember  in   $replicasetmembers    
-#	do      
-#	rsip=$(echo $rsmember|cut -d ":" -f1)
-#	rsport=$(echo $rsmember|cut -d ":" -f2)    
-#	echo " { _id: $i, host: '$rsip:$rsport', priority: $(expr 1000 - $i)}," >> "/etc/initreplica.js"
-#	i=$(expr $i + 1)
-#	done
-#	echo $i
-#    #change the last }, to be , arbiterOnly: true} ,means the last to be arbiter
-#    arbiterstr=$(sed -n '$p' "/etc/initreplica.js" | sed 's/\(.*\)},/\1, arbiterOnly: true}/')
-#    echo $arbiterstr
-#    sed -i '$d' "/etc/initreplica.js" 
-#    echo $arbiterstr >> "/etc/initreplica.js"
-#    
-#    echo "]" >> "/etc/initreplica.js"
-#    echo "};" >> "/etc/initreplica.js"
-#    echo "var error = rs.initiate(cfg);" >> "/etc/initreplica.js"
-#    echo "printjson(error);" >> "/etc/initreplica.js"
-#	if [ "$requiressl" == "yes" ]; then
-#	$dbpath/mongo $bindip:$dbport/admin --ssl --sslAllowInvalidCertificates "/etc/initreplica.js"
-#	else
-#	$dbpath/mongo $bindip:$dbport/admin "/etc/initreplica.js"
-#	fi
-#  else
-#  if [ "$requiressl" == "yes" ]; then
-#  $(which echo) "rs.initiate()"|$dbpath/mongo "$bindip:$dbport" --ssl --sslAllowInvalidCertificates
-#  else
-#  $(which echo) "rs.initiate()"|$dbpath/mongo "$bindip:$dbport"
-#  fi
-#  fi
   else 
   echo "failed to connect mongodb node:$bindip:$dbport"
   fi
@@ -779,6 +768,7 @@ else
 echo "failed to start mongodb service:$dbservicename"
 exit 1
 fi  
+fi
 
 %preun
 while IFS='' read -r line || [[ -n "$line" ]];do 
@@ -811,6 +801,7 @@ for keyname in "${!array[@]}";do
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
 			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
+			"Image") image=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
@@ -870,6 +861,10 @@ fi
 
 if [ -z "$singlenode" ] ; then
 	singlenode=%{singlenode}
+fi
+
+if [ -z "$image" ] ; then
+	image=%{image}
 fi
 
 #uninstallation
@@ -924,6 +919,7 @@ for keyname in "${!array[@]}";do
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
 			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
+			"Image") image=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
@@ -983,6 +979,10 @@ fi
 
 if [ -z "$singlenode" ] ; then
 	singlenode=%{singlenode}
+fi
+
+if [ -z "$image" ] ; then
+	image=%{image}
 fi
 
 #uninstallation
