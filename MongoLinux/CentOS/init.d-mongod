@@ -21,6 +21,10 @@ SYSCONFIG="/etc/sysconfig/mongod"
 
 PIDFILEPATH=`awk -F'[:=]' -v IGNORECASE=1 '/^[[:blank:]]*(processManagement\.)?pidfilepath[[:blank:]]*[:=][[:blank:]]*/{print $2}' "$CONFIGFILE" | tr -d "[:blank:]\"'" | awk -F'#' '{print $1}'`
 
+mkdir -p /sys/fs/cgroup/cpu/mongod
+echo 40000 > /sys/fs/cgroup/cpu/mongod/cpu.cfs_quota_us
+CGROUP_DAEMON="cpu:mongod"
+
 mongod=${MONGOD-/etc/mongod1/bin/mongod}
 
 MONGO_USER=mongod
@@ -63,15 +67,15 @@ start()
   daemon --user "$MONGO_USER" --check $mongod "$NUMACTL $mongod $OPTIONS >/dev/null 2>&1"
   RETVAL=$?
   echo
-  [ $RETVAL -eq 0 ] && touch /var/lock/subsys/mongod
-  
-#  #add crontab task,execute every 12 hours,backup the crontab first
-local pid=`pidofproc -p "${PIDFILEPATH}" ${mongod}`
-  if [[ $(crontab -l) ]];
-  then
+  if [ $RETVAL -eq 0 ]; then  
+  touch /var/lock/subsys/mongod
+  #add crontab task,execute every 12 hours,backup the crontab first
+  local pid=`pidofproc -p "${PIDFILEPATH}" ${mongod}`
+  if [[ $(crontab -l) ]]; then
      crontab -l |sed "$ a 0 */12 * * * kill -USR1 ${pid} >/dev/null 2>&1" | crontab
   else
      echo "0 */12 * * * kill -USR1 ${pid} >/dev/null 2>&1" | crontab
+  fi
   fi
 }
 

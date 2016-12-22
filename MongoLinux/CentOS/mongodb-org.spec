@@ -4,16 +4,16 @@
 #%global replicaset rs
 #define service name:mongors
 #%global servicename mongors
-%global dbservicename mongod 
-%global dbsystemuser	mongod 
-%global dbsystemgroup mongod
-%global rootpath /etc/mongod
-%global dbpath /etc/mongod/bin 
-%global datapath /etc/mongod/data
-%global logpath /etc/mongod/log
+%global dbservicename mongodnetbrain 
+%global dbsystemuser	netbrain 
+%global dbsystemgroup netbrain
+%global rootpath /home/netbrain/mongodb
+%global dbpath /home/netbrain/mongodb/bin 
+%global datapath /home/netbrain/mongodb/data
+%global logpath /home/netbrain/mongodb/log
 %global bindip 127.0.0.1
-%global dbport 25101
-%global replicasetname rs
+%global dbport 27017
+%global replicasetname rsnetbrain
 %global cpulimit 90%
 %global memorylimit 90%
 %global singlenode yes
@@ -38,9 +38,15 @@ Group: Applications/Databases
 #Requires: openssl
 #Requires: python >= 3.4.3
 #Requires: pymongo >= 3.0.2
-Requires:bc
+#Requires:bc
 Requires:lsof
-Requires:libcgroup
+#Requires:libcgroup
+#Requires:libcgroup-tools
+Requires(pre):numactl
+Requires(pre):libcgroup
+Requires(pre):libcgroup-tools
+#Requires(pre):yum -y install libcgroup
+#Requires(pre):yum -y install libcgroup-tools
 Source0: mongodbconfig-1.0.tgz
 Source1: init.d-mongod
 Source2: mongod.conf
@@ -347,8 +353,10 @@ if [ -z "$freespaceinMB" ] ; then
 freespaceinMB=$(df -h -m $topdir | awk '/^tmpfs/{print $4}')
 fi
 #51200MB=50GB
-c=$(echo "$freespaceinMB > 51200" | bc)
-if [ $c -eq 1 ];then : ;else echo "The free space of data folder is less than 50GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
+#the command not work in RedHat7
+#c=$(echo "$freespaceinMB > 51200" | bc)
+#if [ $c -eq 1 ];then : ;else echo "The free space of data folder is less than 50GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
+if [ "$freespaceinMB" -ge "51200" ];then : ;else echo "The free space of data folder is less than 50GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
 #calc free space of log folder
 topdir=$(echo $logpath|cut -d "/" -f2)
 topdir="/"$topdir
@@ -358,8 +366,10 @@ if [ -z "$freespaceinMB" ] ; then
 freespaceinMB=$(df -h -m $topdir | awk '/^tmpfs/{print $4}')
 fi
 #10240MB=10GB
-c=$(echo "$freespaceinMB > 10240" | bc)
-if [ $c -eq 1 ];then : ;else echo "The free space of log folder is less than 10GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
+#the command not work in RedHat7
+#c=$(echo "$freespaceinMB > 10240" | bc)
+#if [ $c -eq 1 ];then : ;else echo "The free space of log folder is less than 10GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
+if [ "$freespaceinMB" -ge "10240" ];then : ;else echo "The free space of data folder is less than 50GB. It may result in insufficient disk space after a period of use, the installation will abort";exit 1;fi;
 #if ssl equal to yes,check cert.pem and key.pem
 if [ "$requiressl" == "yes" ]; then 
 if [ ! -f "$certpath" ]; then  
@@ -510,8 +520,10 @@ fi
   fi
   #cacheSizeInGB=cgroupMemoryInGB*60%-1>1?cgroupMemoryInGB*60%-1:1
   cachevalueGB=$(awk "BEGIN {printf \"%.0f\n\", ($cgroupMemoryInGB*60)/100-1}")
-  b=$(echo "$cachevalueGB > 1" | bc)
-  if [ $b -eq 1 ];then cacheSizeInGB=$cachevalueGB;else cacheSizeInGB=1;fi;
+  #the command not work in RedHat7
+  #b=$(echo "$cachevalueGB > 1" | bc)
+  #if [ $b -eq 1 ];then cacheSizeInGB=$cachevalueGB;else cacheSizeInGB=1;fi;
+  if [ "$cachevalueGB" -ge "1" ];then cacheSizeInGB=$cachevalueGB;else cacheSizeInGB=1;fi;
   echo $cacheSizeInGB
   
   #cp -r /etc/mongod1 $rootpath
@@ -568,6 +580,21 @@ fi
   #chmod -R a+x $dbpath
   #change content of init.d/$dbservicename
   sed -i "s@/etc/mongod1/mongod.conf@$rootpath/mongod.conf@g" /etc/init.d/$dbservicename
+  #add cgroup CPU config begin
+  sed -i "s@mkdir -p /sys/fs/cgroup/cpu/mongod@mkdir -p /sys/fs/cgroup/cpu/$dbservicename@g" /etc/init.d/$dbservicename
+  cpucount=$(nproc)
+  cpulimitnum=$(echo "$cpulimit"|cut -d "%" -f1)
+  #if cpulimit=90%,then cpulimitnum=90
+  cpucfsquotaus=$(awk "BEGIN {printf \"%.0f\n\", (100000*$cpucount*$cpulimitnum)/100}")
+  echo $cpucfsquotaus
+  if [ $cpucfsquotaus == 0 ]  
+  then
+  echo "The cfs_quota_us of mongodb service cannot be 0,the installation will abort"
+  exit 1
+  fi
+  sed -i "s@echo 40000 > /sys/fs/cgroup/cpu/mongod/cpu.cfs_quota_us@echo $cpucfsquotaus > /sys/fs/cgroup/cpu/$dbservicename/cpu.cfs_quota_us@g" /etc/init.d/$dbservicename
+  sed -i "s@CGROUP_DAEMON=\"cpu:mongod\"@CGROUP_DAEMON=\"cpu:$dbservicename\"@g" /etc/init.d/$dbservicename
+  #add cgroup CPU config end
   sed -i "s@MONGO_USER=mongod@MONGO_USER=$dbsystemuser@g" /etc/init.d/$dbservicename
   sed -i "s@MONGO_GROUP=mongod@MONGO_GROUP=$dbsystemgroup@g" /etc/init.d/$dbservicename
   sed -i "s@/etc/mongod1/bin@$dbpath@g" /etc/init.d/$dbservicename
@@ -598,6 +625,9 @@ fi
   chown -R $dbsystemuser:$dbsystemgroup /var/run/$dbservicename
   chown $dbsystemuser:$dbsystemgroup /var/run/$dbservicename/mongod.pid
   chmod -R a+x $rootpath
+  #fix ENG-20731 begin
+  chown -R $dbsystemuser:$dbsystemgroup /home/netbrain
+  #fix ENG-20731 end
   
   chown -R $dbsystemuser:$dbsystemgroup $dbpath
   chmod -R a+x $dbpath  
@@ -653,10 +683,10 @@ fi
   cat /sys/kernel/mm/transparent_hugepage/enabled
   cat /sys/kernel/mm/transparent_hugepage/defrag
   #add cgroup configuration
-  service cgconfig restart
-  systemctl set-property $dbservicename CPUShares=1024
+  #service cgconfig restart
+  #systemctl set-property $dbservicename CPUShares=1024
   systemctl set-property $dbservicename MemoryLimit=$cgroupMemoryInGB"G"
-  chkconfig cgconfig on
+  #chkconfig cgconfig on
   #get port from parameters input, firewall should allow access to $dbport of this Linux machine
   firewall-cmd --zone=public --add-port=$dbport/tcp --permanent
   firewall-cmd --reload
@@ -978,7 +1008,7 @@ then
 #fi
 if [ -d "$datapath" ] ; then
 #rename data folder,add suffix of UTC time 
-mv $datapath $datapath$(date -u +"%B|%d|%Y|%T")
+mv $datapath $datapath$(date -u +"%Y|%b|%d|%T")
 fi
 if [ -d "$dbpath" ] ; then
 	rm -rf $dbpath/*
@@ -993,6 +1023,9 @@ if [ -f "$rootpath/mongodb-keyfile" ] ; then
 fi
 if [ -f "$rootpath/mongodb.pem" ] ; then
 	rm -rf $rootpath/mongodb.pem >/dev/null 2>&1	
+fi
+if [ -f "$rootpath/mongod.conf" ] ; then
+	mv -f $rootpath/mongod.conf $rootpath/mongod.conf$(date -u +"%Y|%b|%d|%T")
 fi
 rm -rf /tmp/mongodb-$dbport.sock >/dev/null 2>&1
 rm -rf /etc/netbrainrssuccess >/dev/null 2>&1
@@ -1036,10 +1069,7 @@ fi
 /etc/tuned/no-thp/tuned.conf
 /etc/ssl/mongodb.pem
 %config(noreplace) /etc/sysconfig/mongod
-%attr(0755,netbrain,netbrain) %dir /etc/mongod1/data
-%attr(0755,netbrain,netbrain) %dir /etc/mongod1/log
-#%attr(0755,netbrain,netbrain) %dir /var/run/mongodb
-%attr(0640,netbrain,netbrain) %config(noreplace) %verify(not md5 size mtime) /etc/mongod1/log/mongod.log
+%config(noreplace) /etc/mongod1/log/mongod.log
 %doc GNU-AGPL-3.0
 %doc README
 %doc THIRD-PARTY-NOTICES
