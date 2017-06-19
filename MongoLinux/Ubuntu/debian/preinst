@@ -1,0 +1,6 @@
+#!/bin/sh
+if ! id -u mongodb > /dev/null 2>&1; then
+   sudo adduser mongodb --gecos "mongodb mongodb" --disabled-password
+   sudo echo "mongodb:mongodb" | sudo chpasswd
+   sudo usermod -aG sudo mongodb
+fi

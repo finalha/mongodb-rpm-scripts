@@ -1,0 +1,15 @@
+#!/bin/sh
+IP=$(ifconfig | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
+echo IP=$IP
+sudo sed -i -e 's/127.0.0.1/'$IP',127.0.0.1/g' /etc/mongod.conf
+sudo service mongod start
+sudo sleep 10
+sudo echo "rs.initiate()"|/usr/bin/mongo "127.0.0.1:27017"
+sudo echo "var userpassword = {" >> "/etc/adduserpassword.js"
+sudo echo "user: \"mongodb\"," >> "/etc/adduserpassword.js"
+sudo echo "pwd: \"mongodb\"," >> "/etc/adduserpassword.js"
+sudo echo "roles: [ { role: \"root\", db: \"admin\" } ]" >> "/etc/adduserpassword.js"
+sudo echo "};" >> "/etc/adduserpassword.js"
+sudo echo "var error = db.createUser(userpassword);" >> "/etc/adduserpassword.js"
+sleep 10
+sudo /usr/bin/mongo 127.0.0.1:27017/admin "/etc/adduserpassword.js"

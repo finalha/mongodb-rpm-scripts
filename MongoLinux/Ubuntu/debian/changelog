@@ -1,0 +1,5 @@
+mongodb (3.2-5) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #XXXXXX)
+
+ -- Builder <builder@netbraintech.com>  Mon, 27 Mar 2017 11:33:06 -0400

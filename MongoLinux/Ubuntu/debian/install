@@ -1,0 +1,3 @@
+mongodb/etc/init/mongod.conf etc/init
+mongodb/etc/mongod.conf etc
+mongodb/usr/bin/* usr/bin

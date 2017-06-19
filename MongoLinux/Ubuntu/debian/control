@@ -1,0 +1,12 @@
+Source: mongodb
+Maintainer: Builder <builder@netbraintech.com>
+Section: admin
+Priority: extra
+Standards-Version: 3.9.2
+Build-Depends: debhelper (>=9)
+
+Package: mongodb
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: NetBrain MongoDB Server
+ NetBrain Ubuntu MongoDB Server.
