@@ -1,5 +1,14 @@
-looptag=true
+#!/bin/bash
+function returnresult()
+{
+   if [ $1 = "0" ];then
+        return 0
+   else
+        return 1
+   fi
+}
 
+looptag=true
 while $looptag ;do 
 #judge OS version,must be CentOS7.x
 #cat /etc/redhat-release = Red Hat Enterprise Linux Server release 7.0 (Maipo)
@@ -12,6 +21,7 @@ fi
 if [ $osversion -lt 7 ]; then  
 echo "The version of operation system must be 7.0 or above, the installation will abort"
 looptag=false
+returnresult 1 
 break 
 fi 
 
@@ -20,16 +30,18 @@ uname -a|grep x86_64
 if [ ! $? == 0 ];then
 echo "The architecture of operation system must be 64bit, the installation will abort"
 looptag=false
+returnresult 1 
 break
 fi
 
-if [ `whoami` = "root" ];then
- echo "You are root user"
-else
- echo "You are not root user, the installation will abort"
- looptag=false
-break
-fi
+#if [ `whoami` = "root" ];then
+# echo "You are root user"
+#else
+# echo "You are not root user, the installation will abort"
+# looptag=false
+#returnresult 1 
+#break
+#fi
 
 while IFS='' read -r line || [[ -n "$line" ]];do 
   read -r key value <<< "$line"
@@ -44,8 +56,8 @@ for keyname in "${!array[@]}";do
 			"DBServiceName") dbservicename=${array[$keyname]} ;;
 			"DBSystemUser") dbsystemuser=${array[$keyname]} ;;
 			"DBSystemGroup") dbsystemgroup=${array[$keyname]} ;;
-			"RootPath") rootpath=${array[$keyname]} ;;
-			"DBPath") dbpath=${array[$keyname]} ;;
+			"ConfPath") confpath=${array[$keyname]} ;;
+			#"DBPath") dbpath=${array[$keyname]} ;;
 			"DataPath") datapath=${array[$keyname]} ;;
 			"LogPath") logpath=${array[$keyname]} ;;
 			"BindIp") bindip=${array[$keyname]} ;;
@@ -60,17 +72,17 @@ for keyname in "${!array[@]}";do
 			"DBPassword") dbpassword=${array[$keyname]} ;;
 			"SingleNode") singlenode=${array[$keyname]} ;;	
 			"ReplicaSetMembers") replicasetmembers=${array[$keyname]} ;;
-			"ReplicaSetKeyFile") replicasetkeyfile=${array[$keyname]} ;;
         esac			
 		#echo "key  : $keyname"
         #echo "value: ${array[$keyname]}"
 done;
-    
+dbpath=/bin
+
 echo "DBServiceName value is :$dbservicename"
 echo "DBSystemUser value is :$dbsystemuser"
 echo "DBSystemGroup value is :$dbsystemgroup"
-echo "RootPath value is :$rootpath"
-echo "DBPath value is :$dbpath"
+echo "ConfPath value is :$confpath"
+#echo "DBPath value is :$dbpath"
 echo "DataPath value is :$datapath"
 echo "LogPath value is :$logpath"
 echo "BindIp value is :$bindip"
@@ -84,15 +96,29 @@ echo "KeyPath value is :$keypath"
 echo "DBUser value is :$dbuser"
 echo "DBPassword value is :******"
 echo "SingleNode value is :$singlenode"
+if [ "$singlenode" == "no" ]; then
 echo "ReplicaSetMembers value is :$replicasetmembers"
-echo "ReplicaSetKeyFile value is :$replicasetkeyfile"
-#config replicaset for three,five,seven or more nodes
+fi
+
+  #judge if mongodbconfig.sh has been execute successfully
+  if [ "$requiressl" == "yes" ]; then
+  $(which echo) "exit"|$dbpath/mongo --host 127.0.0.1:$dbport -u "$dbuser" -p "$dbpassword" --authenticationDatabase admin --ssl --sslAllowInvalidCertificates > /dev/null 2>&1
+  else
+  $(which echo) "exit"|$dbpath/mongo --host 127.0.0.1:$dbport -u "$dbuser" -p "$dbpassword" --authenticationDatabase admin > /dev/null 2>&1
+  fi
+  if [ $? == 0 ];then
+  echo "mongodbconfig.sh has been execute successfully"
+  looptag=false
+  returnresult 0 
+  break
+  fi
+  #config replicaset for three,five,seven or more nodes
   if [ "$requiressl" == "yes" ]; then
   $(which echo) "exit"|$dbpath/mongo "$bindip:$dbport" --ssl --sslAllowInvalidCertificates
   else
   $(which echo) "exit"|$dbpath/mongo "$bindip:$dbport"
   fi
-if [ $? == 0 ];then
+  if [ $? == 0 ];then
   echo "succeed to connect mongodb node:$bindip:$dbport"
   #must sleep some seconds
   sleep 20
@@ -103,15 +129,16 @@ if [ $? == 0 ];then
 
 	echo "var cfg = { _id: '$replicasetname'," >> "/etc/initreplica.js"
 	echo "members: [" >> "/etc/initreplica.js"
-	echo " { _id: 0, host: '$bindip:$dbport', priority: 1000}," >> "/etc/initreplica.js"
-	i=1
+	#echo " { _id: 0, host: '$bindip:$dbport', priority: 1000}," >> "/etc/initreplica.js"
+	#i=1
+	i=0
 	for   rsmember  in   $replicasetmembers    
 	do      
 	rsip=$(echo $rsmember|cut -d ":" -f1)
 	rsport=$(echo $rsmember|cut -d ":" -f2)
-	if [ "$rsip:$rsport" = "$bindip:$dbport" ];then
-	continue
-	fi
+	#if [ "$rsip:$rsport" = "$bindip:$dbport" ];then
+	#continue
+	#fi
 	echo " { _id: $i, host: '$rsip:$rsport', priority: $(expr 1000 - 30 \* $i)}," >> "/etc/initreplica.js"
 	i=$(expr $i + 1)
 	done
@@ -153,7 +180,8 @@ if [ $? == 0 ];then
   else 
   echo "failed to connect mongodb node:$bindip:$dbport"
   looptag=false
-  break
+  returnresult 1 
+break
   fi
 ##restart mongodb service to make replicaset work
 #systemctl restart $dbservicename > /dev/null 2>&1
@@ -200,13 +228,15 @@ if [ ! -z "$dbuser" -a ! -z "$dbpassword" ] ; then
 	if [ "$resultstring" == "1" ]; then
     echo "The node of mongodb is not stable, the shell will abort"
 	looptag=false
-    break
+    returnresult 1 
+break
 	fi
 	
 	if [ "$resultstring" == "t" ]; then
     echo "The node of mongodb is not stable, the shell will abort"
 	looptag=false
-    break
+    returnresult 1 
+break
 	fi
 	
 	if [ "$resultstring" == "0" ]; then
@@ -237,7 +267,8 @@ if [ ! -z "$dbuser" -a ! -z "$dbpassword" ] ; then
 	else
     echo "failed to add username:\"$dbuser\",password:\"******\" for mongodb"
     looptag=false
-    break
+    returnresult 1 
+break
 	fi 
 	fi
 	
@@ -259,5 +290,6 @@ fi
 fi
 fi
 looptag=false
+returnresult 0 
 break  
 done;  

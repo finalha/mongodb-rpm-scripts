@@ -1,0 +1,6 @@
+1 mkdir -p ./mongodbinstall
+2 tar xvf install.tar -C ./mongodbinstall
+3 cd ./mongodbinstall
+4 chmod a+x *.sh
+5 set the parameters in install.conf according to your demand,ip address,e.g
+6 . install.sh
